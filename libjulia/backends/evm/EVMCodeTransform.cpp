@@ -160,7 +160,17 @@ void CodeTransform::operator()(assembly::Identifier const& _identifier)
 		[=](Scope::Variable& _var)
 		{
 			if (int heightDiff = variableHeightDiff(_var, false))
-				m_assembly.appendInstruction(solidity::dupInstruction(heightDiff));
+			{
+				if (heightDiff <= (int)g_maxInstructionStackDepth)
+				{
+					m_assembly.appendInstruction(solidity::dupInstruction(heightDiff));
+				}
+				else
+				{
+					m_assembly.appendConstant(u256(heightDiff));
+					m_assembly.appendInstruction(solidity::dupxInstruction());
+				}
+			}
 			else
 				// Store something to balance the stack
 				m_assembly.appendConstant(u256(0));
@@ -322,7 +332,7 @@ void CodeTransform::operator()(FunctionDefinition const& _function)
 		for (size_t i = 0; i < _function.returns.size(); ++i)
 			stackLayout.push_back(i); // Move return values down, but keep order.
 
-		solAssert(stackLayout.size() <= 17, "Stack too deep");
+		solAssert(stackLayout.size() <= g_maxStackDepth, "Stack too deep");
 		while (!stackLayout.empty() && stackLayout.back() != int(stackLayout.size() - 1))
 			if (stackLayout.back() < 0)
 			{
@@ -331,7 +341,17 @@ void CodeTransform::operator()(FunctionDefinition const& _function)
 			}
 			else
 			{
-				m_assembly.appendInstruction(swapInstruction(stackLayout.size() - stackLayout.back() - 1));
+				//m_assembly.appendInstruction(swapInstruction(stackLayout.size() - stackLayout.back() - 1));
+				
+				if (stackLayout.size() - stackLayout.back() - 1 <= g_maxInstructionStackDepth)
+				{
+					m_assembly.appendInstruction(swapInstruction(stackLayout.size() - stackLayout.back() - 1));
+				}
+				else
+				{
+					m_assembly.appendConstant(stackLayout.size() - stackLayout.back() - 1);
+					m_assembly.appendInstruction(solidity::swapxInstruction());
+				}
 				swap(stackLayout[stackLayout.back()], stackLayout.back());
 			}
 		for (int i = 0; size_t(i) < stackLayout.size(); ++i)
@@ -463,7 +483,17 @@ void CodeTransform::generateAssignment(Identifier const& _variableName)
 	{
 		Scope::Variable const& _var = boost::get<Scope::Variable>(*var);
 		if (int heightDiff = variableHeightDiff(_var, true))
-			m_assembly.appendInstruction(solidity::swapInstruction(heightDiff - 1));
+		{
+			if (heightDiff - 1 <= (int)g_maxInstructionStackDepth)
+			{
+				m_assembly.appendInstruction(solidity::swapInstruction(heightDiff - 1));
+			}
+			else
+			{
+				m_assembly.appendConstant(heightDiff - 1);
+				m_assembly.appendInstruction(solidity::swapxInstruction());
+			}
+		}
 		m_assembly.appendInstruction(solidity::Instruction::POP);
 	}
 	else

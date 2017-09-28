@@ -77,7 +77,14 @@ void ExpressionCompiler::appendConstStateVariableAccessor(VariableDeclaration co
 	utils().convertType(*_varDecl.value()->annotation().type, *_varDecl.annotation().type);
 
 	// append return
-	m_context << dupInstruction(_varDecl.annotation().type->sizeOnStack() + 1);
+	if ((_varDecl.annotation().type->sizeOnStack() + 1) <= g_maxInstructionStackDepth)
+	{
+		m_context << dupInstruction(_varDecl.annotation().type->sizeOnStack() + 1);
+	}
+	else
+	{
+		m_context << eth::AssemblyItem(u256(_varDecl.annotation().type->sizeOnStack() + 1)) << dupxInstruction();
+	}
 	m_context.appendJump(eth::AssemblyItem::JumpType::OutOfFunction);
 }
 
@@ -133,9 +140,18 @@ void ExpressionCompiler::appendStateVariableAccessor(VariableDeclaration const& 
 		m_context << Instruction::SWAP2 << Instruction::POP << Instruction::SWAP1;
 	else if (paramTypes.size() >= 2)
 	{
-		m_context << swapInstruction(paramTypes.size());
-		m_context << Instruction::POP;
-		m_context << swapInstruction(paramTypes.size());
+		if (paramTypes.size() < g_maxInstructionStackDepth)
+		{
+		    m_context << swapInstruction(paramTypes.size());
+		    m_context << Instruction::POP;
+			m_context << swapInstruction(paramTypes.size());
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(paramTypes.size())) << swapxInstruction();
+			m_context << Instruction::POP;
+			m_context << eth::AssemblyItem(u256(paramTypes.size())) << swapxInstruction();
+		}
 		utils().popStackSlots(paramTypes.size() - 1);
 	}
 	unsigned retSizeOnStack = 0;
@@ -174,13 +190,20 @@ void ExpressionCompiler::appendStateVariableAccessor(VariableDeclaration const& 
 		retSizeOnStack = returnTypes.front()->sizeOnStack();
 	}
 	solAssert(retSizeOnStack == utils().sizeOnStack(returnTypes), "");
-	if (retSizeOnStack > 15)
+	if (retSizeOnStack > g_maxStackDepth - 1)
 		BOOST_THROW_EXCEPTION(
 			CompilerError() <<
 			errinfo_sourceLocation(_varDecl.location()) <<
 			errinfo_comment("Stack too deep.")
 		);
-	m_context << dupInstruction(retSizeOnStack + 1);
+	if ((retSizeOnStack + 1) <= g_maxInstructionStackDepth)
+	{	
+		m_context << dupInstruction(retSizeOnStack + 1);
+	}
+	else
+	{
+		m_context << eth::AssemblyItem(u256(retSizeOnStack + 1)) << dupxInstruction();
+	}
 	m_context.appendJump(eth::AssemblyItem::JumpType::OutOfFunction);
 }
 
@@ -258,7 +281,7 @@ bool ExpressionCompiler::visit(Assignment const& _assignment)
 		}
 		if (lvalueSize > 0)
 		{
-			if (itemSize + lvalueSize > 16)
+			if (itemSize + lvalueSize > g_maxStackDepth)
 				BOOST_THROW_EXCEPTION(
 					CompilerError() <<
 					errinfo_sourceLocation(_assignment.location()) <<
@@ -266,7 +289,16 @@ bool ExpressionCompiler::visit(Assignment const& _assignment)
 				);
 			// value [lvalue_ref] updated_value
 			for (unsigned i = 0; i < itemSize; ++i)
-				m_context << swapInstruction(itemSize + lvalueSize) << Instruction::POP;
+			{
+				if (itemSize + lvalueSize <= g_maxInstructionStackDepth)
+				{
+					m_context << swapInstruction(itemSize + lvalueSize) << Instruction::POP;
+				}
+				else
+				{
+					m_context << eth::AssemblyItem(u256(itemSize + lvalueSize)) << swapxInstruction() << Instruction::POP;
+				}
+			}
 		}
 		m_currentLValue->storeValue(*_assignment.annotation().type, _assignment.location());
 	}
@@ -355,7 +387,16 @@ bool ExpressionCompiler::visit(UnaryOperation const& _unaryOperation)
 			m_context << Instruction::DUP1;
 			if (m_currentLValue->sizeOnStack() > 0)
 				for (unsigned i = 1 + m_currentLValue->sizeOnStack(); i > 0; --i)
-					m_context << swapInstruction(i);
+				{
+					if (i <= g_maxInstructionStackDepth)
+					{
+						m_context << swapInstruction(i);
+					}
+					else 
+					{
+                        m_context << eth::AssemblyItem(u256(i)) << swapxInstruction();
+					}
+				}
 		}
 		m_context << u256(1);
 		if (_unaryOperation.getOperator() == Token::Inc)
@@ -365,7 +406,16 @@ bool ExpressionCompiler::visit(UnaryOperation const& _unaryOperation)
 		// Stack for prefix: [ref...] (*ref)+-1
 		// Stack for postfix: *ref [ref...] (*ref)+-1
 		for (unsigned i = m_currentLValue->sizeOnStack(); i > 0; --i)
-			m_context << swapInstruction(i);
+		{
+			if (i <= g_maxInstructionStackDepth)
+			{
+				m_context << swapInstruction(i);
+			}
+			else
+			{
+				m_context << eth::AssemblyItem(u256(i)) << swapxInstruction();
+			}
+		}
 		m_currentLValue->storeValue(
 			*_unaryOperation.annotation().type, _unaryOperation.location(),
 			!_unaryOperation.isPrefixOperation());
@@ -608,7 +658,16 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 			// Its values of gasSet and valueSet is equal to the original function's though.
 			unsigned stackDepth = (function.gasSet() ? 1 : 0) + (function.valueSet() ? 1 : 0);
 			if (stackDepth > 0)
-				m_context << swapInstruction(stackDepth);
+			{
+				if (stackDepth <= g_maxInstructionStackDepth)
+				{
+				    m_context << swapInstruction(stackDepth);
+				}
+				else
+				{
+					m_context << eth::AssemblyItem(u256(stackDepth)) << swapxInstruction();
+				}
+			}
 			if (function.gasSet())
 				m_context << Instruction::POP;
 			break;
@@ -789,7 +848,16 @@ bool ExpressionCompiler::visit(FunctionCall const& _functionCall)
 															   {FunctionType::Kind::RIPEMD160, 3}};
 			m_context << contractAddresses.find(function.kind())->second;
 			for (unsigned i = function.sizeOnStack(); i > 0; --i)
-				m_context << swapInstruction(i);
+			{
+				if (i <= g_maxInstructionStackDepth)
+				{
+					m_context << swapInstruction(i);
+				}
+				else
+				{
+					m_context << eth::AssemblyItem(u256(i)) << swapxInstruction();
+				}
+			}
 			appendExternalFunctionCall(function, arguments);
 			break;
 		}
@@ -1599,7 +1667,16 @@ void ExpressionCompiler::appendExternalFunctionCall(
 			true
 		);
 		for (unsigned i = 0; i < gasValueSize; ++i)
-			m_context << swapInstruction(gasValueSize - i);
+		{
+			if ((gasValueSize - i) <= g_maxInstructionStackDepth)
+			{
+				m_context << swapInstruction(gasValueSize - i);
+			}
+			else
+			{
+				m_context << eth::AssemblyItem(u256(gasValueSize - i)) << swapxInstruction();
+			}
+		}
 		gasStackPos++;
 		valueStackPos++;
 	}
@@ -1643,7 +1720,14 @@ void ExpressionCompiler::appendExternalFunctionCall(
 	utils().fetchFreeMemoryPointer();
 	if (!_functionType.isBareCall() || manualFunctionId)
 	{
-		m_context << dupInstruction(2 + gasValueSize + CompilerUtils::sizeOnStack(argumentTypes));
+		if ((2 + gasValueSize + CompilerUtils::sizeOnStack(argumentTypes)) <= g_maxInstructionStackDepth)
+		{
+			m_context << dupInstruction(2 + gasValueSize + CompilerUtils::sizeOnStack(argumentTypes));
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(2 + gasValueSize + CompilerUtils::sizeOnStack(argumentTypes))) << dupxInstruction();
+		}
 		utils().storeInMemoryDynamic(IntegerType(8 * CompilerUtils::dataStartOffset), false);
 	}
 	// If the function takes arbitrary parameters, copy dynamic length data in place.
@@ -1689,10 +1773,26 @@ void ExpressionCompiler::appendExternalFunctionCall(
 	if (isDelegateCall)
 		solAssert(!_functionType.valueSet(), "Value set for delegatecall");
 	else if (_functionType.valueSet())
-		m_context << dupInstruction(m_context.baseToCurrentStackOffset(valueStackPos));
+	{
+		if (m_context.baseToCurrentStackOffset(valueStackPos) <= g_maxInstructionStackDepth)
+		{
+			m_context << dupInstruction(m_context.baseToCurrentStackOffset(valueStackPos));
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(m_context.baseToCurrentStackOffset(valueStackPos))) << dupxInstruction();
+		}
+	}
 	else
 		m_context << u256(0);
-	m_context << dupInstruction(m_context.baseToCurrentStackOffset(contractStackPos));
+	if (m_context.baseToCurrentStackOffset(contractStackPos) <= g_maxInstructionStackDepth)
+	{
+		m_context << dupInstruction(m_context.baseToCurrentStackOffset(contractStackPos));
+	}
+	else
+	{
+		m_context << eth::AssemblyItem(u256(m_context.baseToCurrentStackOffset(contractStackPos))) << dupxInstruction();
+	}
 
 	bool existenceChecked = false;
 	// Check the the target contract exists (has code) for non-low-level calls.
@@ -1704,7 +1804,14 @@ void ExpressionCompiler::appendExternalFunctionCall(
 	}
 
 	if (_functionType.gasSet())
-		m_context << dupInstruction(m_context.baseToCurrentStackOffset(gasStackPos));
+		if (m_context.baseToCurrentStackOffset(gasStackPos) <= g_maxInstructionStackDepth)
+		{
+			m_context << dupInstruction(m_context.baseToCurrentStackOffset(gasStackPos));
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(m_context.baseToCurrentStackOffset(gasStackPos))) << dupxInstruction();
+		}
 	else
 	{
 		// send all gas except the amount needed to execute "SUB" and "CALL"
@@ -1730,7 +1837,16 @@ void ExpressionCompiler::appendExternalFunctionCall(
 		(!_functionType.isBareCall() || manualFunctionId);
 
 	if (returnSuccessCondition)
-		m_context << swapInstruction(remainsSize);
+	{
+		if (remainsSize <= g_maxInstructionStackDepth)
+		{
+			m_context << swapInstruction(remainsSize);
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(remainsSize)) << swapxInstruction();
+		}
+	}
 	else
 	{
 		//Propagate error condition (if CALL pushes 0 on stack).

@@ -49,6 +49,8 @@ bool SemanticInformation::breaksCSEAnalysisBlock(AssemblyItem const& _item)
 	{
 		if (isSwapInstruction(_item) || isDupInstruction(_item))
 			return false;
+		if (isSwapxInstruction(_item) || isDupxInstruction(_item))
+			return false;
 		if (_item.instruction() == Instruction::GAS || _item.instruction() == Instruction::PC)
 			return true; // GAS and PC assume a specific order of opcodes
 		if (_item.instruction() == Instruction::MSIZE)
@@ -93,11 +95,25 @@ bool SemanticInformation::isDupInstruction(AssemblyItem const& _item)
 	return Instruction::DUP1 <= _item.instruction() && _item.instruction() <= Instruction::DUP16;
 }
 
+bool SemanticInformation::isDupxInstruction(AssemblyItem const& _item)
+{
+	if (_item.type() != Operation)
+		return false;
+	return _item.instruction() == Instruction::DUPX;
+}
+
 bool SemanticInformation::isSwapInstruction(AssemblyItem const& _item)
 {
 	if (_item.type() != Operation)
 		return false;
 	return Instruction::SWAP1 <= _item.instruction() && _item.instruction() <= Instruction::SWAP16;
+}
+
+bool SemanticInformation::isSwapxInstruction(AssemblyItem const& _item)
+{
+	if (_item.type() != Operation)
+		return false;
+	return _item.instruction() == Instruction::SWAPX;
 }
 
 bool SemanticInformation::isJumpInstruction(AssemblyItem const& _item)

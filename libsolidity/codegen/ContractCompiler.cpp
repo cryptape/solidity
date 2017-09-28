@@ -47,7 +47,7 @@ class StackHeightChecker
 public:
 	StackHeightChecker(CompilerContext const& _context):
 		m_context(_context), stackHeight(m_context.stackHeight()) {}
-	void check() { solAssert(m_context.stackHeight() == stackHeight, std::string("I sense a disturbance in the stack: ") + std::to_string(m_context.stackHeight()) + " vs " + std::to_string(stackHeight)); }
+	void check() {solAssert(m_context.stackHeight() == stackHeight, std::string("I sense a disturbance in the stack: ") + std::to_string(m_context.stackHeight()) + " vs " + std::to_string(stackHeight));}
 private:
 	CompilerContext const& m_context;
 	unsigned stackHeight;
@@ -505,7 +505,7 @@ bool ContractCompiler::visit(FunctionDefinition const& _function)
 		stackLayout.push_back(i);
 	stackLayout += vector<int>(c_localVariablesSize, -1);
 
-	if (stackLayout.size() > 17)
+	if (stackLayout.size() > g_maxStackDepth + 1)
 		BOOST_THROW_EXCEPTION(
 			CompilerError() <<
 			errinfo_sourceLocation(_function.location()) <<
@@ -519,7 +519,14 @@ bool ContractCompiler::visit(FunctionDefinition const& _function)
 		}
 		else
 		{
-			m_context << swapInstruction(stackLayout.size() - stackLayout.back() - 1);
+			if (stackLayout.size() - 1 <= g_maxInstructionStackDepth)
+			{
+				m_context << swapInstruction(stackLayout.size() - stackLayout.back() - 1);
+			}
+			else
+			{
+				m_context << eth::AssemblyItem(u256(stackLayout.size() - stackLayout.back() - 1)) << swapxInstruction();
+			}
 			swap(stackLayout[stackLayout.back()], stackLayout.back());
 		}
 	//@todo assert that everything is in place now
@@ -616,14 +623,24 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 					}
 					else
 						solAssert(variable->type()->sizeOnStack() == 1, "");
-					if (stackDiff < 1 || stackDiff > 16)
+					if (stackDiff < 1 || stackDiff > (int)g_maxStackDepth)
 						BOOST_THROW_EXCEPTION(
 							CompilerError() <<
 							errinfo_sourceLocation(_inlineAssembly.location()) <<
 							errinfo_comment("Stack too deep, try removing local variables.")
 						);
 					solAssert(variable->type()->sizeOnStack() == 1, "");
-					_assembly.appendInstruction(dupInstruction(stackDiff));
+					//_assembly.appendInstruction(dupInstruction(stackDiff));
+					if (stackDiff <= (int)g_maxInstructionStackDepth)
+					{
+						_assembly.appendInstruction(dupInstruction(stackDiff));
+					}
+					else
+					{
+						//_assembly.appendInstruction(eth::AssemblyItem(u256(stackDiff)));
+						_assembly.appendConstant(u256(stackDiff));
+						_assembly.appendInstruction(dupxInstruction());
+					}
 				}
 				else
 					solAssert(false, "");
@@ -649,13 +666,22 @@ bool ContractCompiler::visit(InlineAssembly const& _inlineAssembly)
 			);
 			solAssert(variable->type()->sizeOnStack() == 1, "");
 			int stackDiff = _assembly.stackHeight() - m_context.baseStackOffsetOfVariable(*variable) - 1;
-			if (stackDiff > 16 || stackDiff < 1)
+			if (stackDiff > (int)g_maxStackDepth  || stackDiff < 1)
 				BOOST_THROW_EXCEPTION(
 					CompilerError() <<
 					errinfo_sourceLocation(_inlineAssembly.location()) <<
 					errinfo_comment("Stack too deep(" + to_string(stackDiff) + "), try removing local variables.")
 				);
-			_assembly.appendInstruction(swapInstruction(stackDiff));
+			if (stackDiff <= (int)g_maxInstructionStackDepth)
+			{
+				_assembly.appendInstruction(swapInstruction(stackDiff));
+			}
+			else
+			{
+				_assembly.appendConstant(u256(stackDiff));
+				_assembly.appendInstruction(swapxInstruction());
+			}
+
 			_assembly.appendInstruction(Instruction::POP);
 		}
 	};

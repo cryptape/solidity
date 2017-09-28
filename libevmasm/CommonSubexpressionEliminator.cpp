@@ -467,9 +467,17 @@ void CSECodeGenerator::appendDup(int _fromPosition, SourceLocation const& _locat
 {
 	assertThrow(_fromPosition != c_invalidPosition, OptimizerException, "");
 	int instructionNum = 1 + m_stackHeight - _fromPosition;
-	assertThrow(instructionNum <= 16, StackTooDeepException, "Stack too deep, try removing local variables.");
+	assertThrow(instructionNum <= (int)g_maxStackDepth, StackTooDeepException, "Stack too deep, try removing local variables.");
 	assertThrow(1 <= instructionNum, OptimizerException, "Invalid stack access.");
-	appendItem(AssemblyItem(dupInstruction(instructionNum), _location));
+	if (instructionNum <= (int)g_maxInstructionStackDepth)
+	{
+		appendItem(AssemblyItem(dupInstruction(instructionNum), _location));
+	}
+	else
+	{
+		appendItem(AssemblyItem(u256(instructionNum), _location));
+		appendItem(AssemblyItem(dupxInstruction(), _location));
+	}
 	m_stack[m_stackHeight] = m_stack[_fromPosition];
 	m_classPositions[m_stack[m_stackHeight]].insert(m_stackHeight);
 }
@@ -480,9 +488,17 @@ void CSECodeGenerator::appendOrRemoveSwap(int _fromPosition, SourceLocation cons
 	if (_fromPosition == m_stackHeight)
 		return;
 	int instructionNum = m_stackHeight - _fromPosition;
-	assertThrow(instructionNum <= 16, StackTooDeepException, "Stack too deep, try removing local variables.");
+	assertThrow(instructionNum <= (int)g_maxStackDepth, StackTooDeepException, "Stack too deep, try removing local variables.");
 	assertThrow(1 <= instructionNum, OptimizerException, "Invalid stack access.");
-	appendItem(AssemblyItem(swapInstruction(instructionNum), _location));
+	if (instructionNum <= (int)g_maxInstructionStackDepth)
+	{
+		appendItem(AssemblyItem(swapInstruction(instructionNum), _location));
+	}
+	else
+	{
+		appendItem(AssemblyItem(u256(instructionNum), _location));
+		appendItem(AssemblyItem(swapxInstruction(), _location));
+	}
 
 	if (m_stack[m_stackHeight] != m_stack[_fromPosition])
 	{

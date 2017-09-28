@@ -110,12 +110,32 @@ KnownState::StoreOperation KnownState::feedItem(AssemblyItem const& _item, bool 
 					_item.location()
 				)
 			);
+		else if (SemanticInformation::isDupxInstruction(_item))
+		{
+			assertThrow(_lastPushedValue != -1, InvalidDeposit, "No push before DUPX");
+			setStackElement(
+				m_stackHeight + 1,
+				stackElement(
+					m_stackHeight + 1 - _lastPushedValue,
+					_item.location()
+				)
+			);
+		}
 		else if (SemanticInformation::isSwapInstruction(_item))
 			swapStackElements(
 				m_stackHeight,
 				m_stackHeight - 1 - int(instruction) + int(Instruction::SWAP1),
 				_item.location()
 			);
+		else if (SemanticInformation::isSwapxInstruction(_item))
+		{
+			assertThrow(_lastPushedValue != -1, InvalidDeposit, "No push before SWAPX");
+			swapStackElements(
+				m_stackHeight,
+				m_stackHeight - 1 - _lastPushedValue,
+				_item.location()
+			);
+		}
 		else if (instruction != Instruction::POP)
 		{
 			vector<Id> arguments(info.args);

@@ -56,7 +56,14 @@ void ArrayUtils::copyArrayToStorage(ArrayType const& _targetType, ArrayType cons
 	// stack: source_ref [source_length] target_ref
 	// store target_ref
 	for (unsigned i = _sourceType.sizeOnStack(); i > 0; --i)
+	if (i <= g_maxInstructionStackDepth)
+	{
 		m_context << swapInstruction(i);
+	}
+	else
+	{
+		m_context << eth::AssemblyItem(u256(i)) << swapxInstruction();
+	}
 	// stack: target_ref source_ref [source_length]
 	// stack: target_ref source_ref [source_length]
 	// retrieve source length
@@ -170,9 +177,18 @@ void ArrayUtils::copyArrayToStorage(ArrayType const& _targetType, ArrayType cons
 			eth::AssemblyItem copyLoopStart = _context.newTag();
 			_context << copyLoopStart;
 			// check for loop condition
-			_context
-				<< dupInstruction(3 + byteOffsetSize) << dupInstruction(2 + byteOffsetSize)
-				<< Instruction::GT << Instruction::ISZERO;
+			if ((3 + byteOffsetSize) <= g_maxInstructionStackDepth)
+			{
+			    _context
+				    << dupInstruction(3 + byteOffsetSize) << dupInstruction(2 + byteOffsetSize)
+				    << Instruction::GT << Instruction::ISZERO;
+			}
+			else
+			{
+				_context
+					<< eth::AssemblyItem(u256(3 + byteOffsetSize)) << dupxInstruction() << eth::AssemblyItem(u256(2 + byteOffsetSize)) << dupxInstruction()
+					<< Instruction::GT << Instruction::ISZERO;
+			}
 			eth::AssemblyItem copyLoopEnd = _context.appendConditionalJump();
 			// stack: target_ref target_data_end source_data_pos target_data_pos source_data_end [target_byte_offset] [source_byte_offset]
 			// copy
@@ -200,7 +216,14 @@ void ArrayUtils::copyArrayToStorage(ArrayType const& _targetType, ArrayType cons
 				// We might copy too much if there is padding at the last element, but this way end
 				// checking is easier.
 				// stack: target_ref target_data_end source_data_pos target_data_pos source_data_end [target_byte_offset] [source_byte_offset]
-				_context << dupInstruction(3 + byteOffsetSize);
+				if ((3 + byteOffsetSize) <= g_maxInstructionStackDepth)
+				{
+					_context << dupInstruction(3 + byteOffsetSize);
+				}
+				else
+				{
+					_context << eth::AssemblyItem(u256(3 + byteOffsetSize)) << dupxInstruction();
+				}
 				if (_sourceType.location() == DataLocation::Storage)
 				{
 					if (haveByteOffsetSource)
@@ -215,13 +238,29 @@ void ArrayUtils::copyArrayToStorage(ArrayType const& _targetType, ArrayType cons
 					solUnimplemented("Copying of type " + _sourceType.toString(false) + " to storage not yet supported.");
 				// stack: target_ref target_data_end source_data_pos target_data_pos source_data_end [target_byte_offset] [source_byte_offset] <source_value>...
 				solAssert(
-					2 + byteOffsetSize + sourceBaseType->sizeOnStack() <= 16,
+					2 + byteOffsetSize + sourceBaseType->sizeOnStack() <= g_maxStackDepth,
 					"Stack too deep, try removing local variables."
 				);
 				// fetch target storage reference
-				_context << dupInstruction(2 + byteOffsetSize + sourceBaseType->sizeOnStack());
+				if ((2 + byteOffsetSize + sourceBaseType->sizeOnStack()) <= g_maxInstructionStackDepth)
+				{
+					_context << dupInstruction(2 + byteOffsetSize + sourceBaseType->sizeOnStack());
+				}
+				else
+				{
+					_context << eth::AssemblyItem(u256(2 + byteOffsetSize + sourceBaseType->sizeOnStack())) << dupxInstruction();
+				}
 				if (haveByteOffsetTarget)
-					_context << dupInstruction(1 + byteOffsetSize + sourceBaseType->sizeOnStack());
+				{
+					if ((1 + byteOffsetSize + sourceBaseType->sizeOnStack()) <= g_maxInstructionStackDepth)
+					{
+					    _context << dupInstruction(1 + byteOffsetSize + sourceBaseType->sizeOnStack());
+					}
+					else
+					{
+						_context << eth::AssemblyItem(u256(1 + byteOffsetSize + sourceBaseType->sizeOnStack())) << dupxInstruction();
+					}
+				}
 				else
 					_context << u256(0);
 				StorageItem(_context, *targetBaseType).storeValue(*sourceBaseType, SourceLocation(), true);
@@ -232,35 +271,78 @@ void ArrayUtils::copyArrayToStorage(ArrayType const& _targetType, ArrayType cons
 				utils.incrementByteOffset(sourceBaseType->storageBytes(), 1, haveByteOffsetTarget ? 5 : 4);
 			else
 			{
-				_context << swapInstruction(2 + byteOffsetSize);
+				if ((2 + byteOffsetSize) <= g_maxInstructionStackDepth)
+				{
+					_context << swapInstruction(2 + byteOffsetSize);
+				}
+				else
+				{
+					_context << eth::AssemblyItem(u256(2 + byteOffsetSize)) << swapxInstruction();
+				}
 				if (sourceIsStorage)
 					_context << sourceBaseType->storageSize();
 				else if (_sourceType.location() == DataLocation::Memory)
 					_context << sourceBaseType->memoryHeadSize();
 				else
 					_context << sourceBaseType->calldataEncodedSize(true);
-				_context
-					<< Instruction::ADD
-					<< swapInstruction(2 + byteOffsetSize);
+				if ((2 + byteOffsetSize) <= g_maxInstructionStackDepth)
+				{	
+				    _context
+					    << Instruction::ADD
+						<< swapInstruction(2 + byteOffsetSize);
+				}
+				else
+				{
+					_context
+					    << Instruction::ADD
+					    << eth::AssemblyItem(u256(2 + byteOffsetSize)) << swapxInstruction();
+				}
 			}
 			// increment target
 			if (haveByteOffsetTarget)
 				utils.incrementByteOffset(targetBaseType->storageBytes(), byteOffsetSize, byteOffsetSize + 2);
-			else
-				_context
-					<< swapInstruction(1 + byteOffsetSize)
-					<< targetBaseType->storageSize()
-					<< Instruction::ADD
-					<< swapInstruction(1 + byteOffsetSize);
+			else {
+				if ((1 + byteOffsetSize) <= g_maxInstructionStackDepth)
+				{
+				    _context
+					    << swapInstruction(1 + byteOffsetSize)
+					    << targetBaseType->storageSize()
+					    << Instruction::ADD
+						<< swapInstruction(1 + byteOffsetSize);
+				}
+				else
+				{
+					_context
+						<< eth::AssemblyItem(u256(1 + byteOffsetSize)) << swapxInstruction()
+						<< targetBaseType->storageSize()
+						<< Instruction::ADD
+						<< eth::AssemblyItem(u256(1 + byteOffsetSize)) << swapxInstruction();
+				}
+			}
 			_context.appendJumpTo(copyLoopStart);
 			_context << copyLoopEnd;
 			if (haveByteOffsetTarget)
 			{
 				// clear elements that might be left over in the current slot in target
 				// stack: target_ref target_data_end source_data_pos target_data_pos source_data_end target_byte_offset [source_byte_offset]
-				_context << dupInstruction(byteOffsetSize) << Instruction::ISZERO;
+				if (byteOffsetSize <= g_maxInstructionStackDepth)
+				{
+					_context << dupInstruction(byteOffsetSize) << Instruction::ISZERO;
+				}
+				else
+				{
+					_context << eth::AssemblyItem(u256(byteOffsetSize)) << dupxInstruction() << Instruction::ISZERO;
+				}
 				eth::AssemblyItem copyCleanupLoopEnd = _context.appendConditionalJump();
-				_context << dupInstruction(2 + byteOffsetSize) << dupInstruction(1 + byteOffsetSize);
+				if ((2 + byteOffsetSize) <= g_maxInstructionStackDepth)
+				{
+					_context << dupInstruction(2 + byteOffsetSize) << dupInstruction(1 + byteOffsetSize);
+				}
+				else
+				{
+					_context << eth::AssemblyItem(u256(2 + byteOffsetSize)) << dupxInstruction() 
+						<< eth::AssemblyItem(u256(1 + byteOffsetSize)) << dupxInstruction();
+				}
 				StorageItem(_context, *targetBaseType).setToZero(SourceLocation(), true);
 				utils.incrementByteOffset(targetBaseType->storageBytes(), byteOffsetSize, byteOffsetSize + 2);
 				_context.appendJumpTo(copyLoopEnd);
@@ -861,7 +943,14 @@ void ArrayUtils::retrieveLength(ArrayType const& _arrayType, unsigned _stackDept
 		m_context << _arrayType.length();
 	else
 	{
-		m_context << dupInstruction(1 + _stackDepth);
+		if ((1 + _stackDepth) <= g_maxInstructionStackDepth)
+		{
+			m_context << dupInstruction(1 + _stackDepth);
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(1 + _stackDepth)) << dupxInstruction();
+		}
 		switch (_arrayType.location())
 		{
 		case DataLocation::CallData:
@@ -988,20 +1077,47 @@ void ArrayUtils::incrementByteOffset(unsigned _byteSize, unsigned _byteOffsetPos
 	//     storageOffset++;
 	//     byteOffset = 0;
 	// }
-	if (_byteOffsetPosition > 1)
-		m_context << swapInstruction(_byteOffsetPosition - 1);
-	m_context << u256(_byteSize) << Instruction::ADD;
-	if (_byteOffsetPosition > 1)
-		m_context << swapInstruction(_byteOffsetPosition - 1);
+	if (_byteOffsetPosition > 1) 
+	{
+		if ((_byteOffsetPosition - 1) <= g_maxInstructionStackDepth)
+		{
+			m_context << swapInstruction(_byteOffsetPosition - 1);
+			m_context << u256(_byteSize) << Instruction::ADD;
+			m_context << swapInstruction(_byteOffsetPosition - 1);
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(_byteOffsetPosition - 1)) << swapxInstruction();
+			m_context << u256(_byteSize) << Instruction::ADD;
+			m_context << eth::AssemblyItem(u256(_byteOffsetPosition - 1)) << swapxInstruction();
+		}
+	}
 	// compute, X := (byteOffset + byteSize - 1) / 32, should be 1 iff byteOffset + bytesize > 32
-	m_context
-		<< u256(32) << dupInstruction(1 + _byteOffsetPosition) << u256(_byteSize - 1)
-		<< Instruction::ADD << Instruction::DIV;
+	if ((1 + _byteOffsetPosition) <= g_maxInstructionStackDepth)
+	{
+	    m_context
+		    << u256(32) << dupInstruction(1 + _byteOffsetPosition) << u256(_byteSize - 1)
+			<< Instruction::ADD << Instruction::DIV;
+	}
+	else
+	{
+		m_context
+			<< u256(32) << eth::AssemblyItem(u256(1 + _byteOffsetPosition)) << dupxInstruction() << u256(_byteSize - 1)
+			<< Instruction::ADD << Instruction::DIV;
+	}
 	// increment storage offset if X == 1 (just add X to it)
 	// stack: X
-	m_context
-		<< swapInstruction(_storageOffsetPosition) << dupInstruction(_storageOffsetPosition + 1)
-		<< Instruction::ADD << swapInstruction(_storageOffsetPosition);
+	if ((_storageOffsetPosition + 1) <= g_maxInstructionStackDepth)
+	{    m_context
+		    << swapInstruction(_storageOffsetPosition) << dupInstruction(_storageOffsetPosition + 1)
+			<< Instruction::ADD << swapInstruction(_storageOffsetPosition);
+	}
+	else
+	{
+		m_context
+			<< eth::AssemblyItem(u256(_storageOffsetPosition)) << swapxInstruction() << eth::AssemblyItem(u256(_storageOffsetPosition + 1)) << dupxInstruction()
+			<< Instruction::ADD << eth::AssemblyItem(u256(_storageOffsetPosition)) << swapxInstruction();
+	}
 	// stack: X
 	// set source_byte_offset to zero if X == 1 (using source_byte_offset *= 1 - X)
 	m_context << u256(1) << Instruction::SUB;
@@ -1009,7 +1125,18 @@ void ArrayUtils::incrementByteOffset(unsigned _byteSize, unsigned _byteOffsetPos
 	if (_byteOffsetPosition == 1)
 		m_context << Instruction::MUL;
 	else
-		m_context
-			<< dupInstruction(_byteOffsetPosition + 1) << Instruction::MUL
-			<< swapInstruction(_byteOffsetPosition) << Instruction::POP;
+	{
+		if ((_byteOffsetPosition + 1) <= g_maxInstructionStackDepth)
+		{
+		    m_context
+			    << dupInstruction(_byteOffsetPosition + 1) << Instruction::MUL
+			    << swapInstruction(_byteOffsetPosition) << Instruction::POP;
+		}
+		else
+		{
+			m_context
+				<< eth::AssemblyItem(u256(_byteOffsetPosition + 1)) << dupxInstruction() << Instruction::MUL
+				<< eth::AssemblyItem(u256(_byteOffsetPosition)) << swapxInstruction() << Instruction::POP;
+		}
+	}
 }

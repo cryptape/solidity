@@ -173,6 +173,8 @@ private:
 	std::shared_ptr<ExpressionClasses> m_expressionClasses;
 	/// Container for unions of tags stored on the stack.
 	boost::bimap<Id, std::set<u256>> m_tagUnions;
+	/// record push value of last item for dupx and swapx
+	int _lastPushedValue = -1;
 };
 
 }

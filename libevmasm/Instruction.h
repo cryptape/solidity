@@ -182,6 +182,9 @@ enum class Instruction: uint8_t
 	LOG3,				///< Makes a log entry; 3 topics.
 	LOG4,				///< Makes a log entry; 4 topics.
 
+	DUPX = 0xb0,        ///< SDC dup copies special height value on the stack
+	SWAPX,              ///< SDC swaps the highest and special height value on the stack
+
 	CREATE = 0xf0,		///< create a new account with associated code
 	CALL,				///< message-call into an account
 	CALLCODE,			///< message-call with another account's code only
@@ -194,6 +197,9 @@ enum class Instruction: uint8_t
 	INVALID = 0xfe,		///< invalid instruction for expressing runtime errors (e.g., division-by-zero)
 	SELFDESTRUCT = 0xff	///< halt execution and register account for later deletion
 };
+
+extern const unsigned g_maxStackDepth;
+extern const unsigned g_maxInstructionStackDepth;
 
 /// @returns the number of PUSH Instruction _inst
 inline unsigned getPushNumber(Instruction _inst)
@@ -227,11 +233,23 @@ inline Instruction dupInstruction(unsigned _number)
 	return Instruction(unsigned(Instruction::DUP1) + _number - 1);
 }
 
+/// @returns the DUPX instruction
+inline Instruction dupxInstruction()
+{
+	return Instruction(unsigned(Instruction::DUPX));
+}
+
 /// @returns the SWAP<_number> instruction
 inline Instruction swapInstruction(unsigned _number)
 {
 	assertThrow(1 <= _number && _number <= 16, InvalidOpcode, std::string("Invalid SWAP instruction requested (") + std::to_string(_number) + ").");
 	return Instruction(unsigned(Instruction::SWAP1) + _number - 1);
+}
+
+/// @returns the SWAPX instruction
+inline Instruction swapxInstruction()
+{
+	return Instruction(unsigned(Instruction::SWAPX));
 }
 
 /// @returns the LOG<_number> instruction

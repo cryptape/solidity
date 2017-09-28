@@ -203,7 +203,7 @@ void CompilerUtils::encodeToMemory(
 			// leave end_of_mem as dyn head pointer
 			m_context << Instruction::DUP1 << u256(32) << Instruction::ADD;
 			dynPointers++;
-			solAssert((argSize + dynPointers) < 16, "Stack too deep, try using less variables.");
+			solAssert((argSize + dynPointers) < g_maxStackDepth, "Stack too deep, try using less variables.");
 		}
 		else
 		{
@@ -245,10 +245,19 @@ void CompilerUtils::encodeToMemory(
 		if (targetType->isDynamicallySized() && !_copyDynamicDataInPlace)
 		{
 			// copy tail pointer (=mem_end - mem_start) to memory
-			m_context << dupInstruction(2 + dynPointers) << Instruction::DUP2;
-			m_context << Instruction::SUB;
-			m_context << dupInstruction(2 + dynPointers - thisDynPointer);
-			m_context << Instruction::MSTORE;
+			if ((2 + dynPointers) <= g_maxInstructionStackDepth)
+			{
+			    m_context << dupInstruction(2 + dynPointers) << Instruction::DUP2;
+			    m_context << Instruction::SUB;
+				m_context << dupInstruction(2 + dynPointers - thisDynPointer);
+			}
+			else
+			{
+				m_context << eth::AssemblyItem(u256(2 + dynPointers)) << dupxInstruction() << Instruction::DUP2;
+				m_context << Instruction::SUB;
+				m_context << eth::AssemblyItem(u256(2 + dynPointers - thisDynPointer)) << dupxInstruction();
+			}
+			m_context << Instruction::MSTORE;  
 			// stack: ... <end_of_mem>
 			if (_givenTypes[i]->category() == Type::Category::StringLiteral)
 			{
@@ -266,13 +275,27 @@ void CompilerUtils::encodeToMemory(
 				copyToStackTop(argSize - stackPos + dynPointers + 2, arrayType.sizeOnStack());
 				// stack: ... <end_of_mem> <value...>
 				// copy length to memory
-				m_context << dupInstruction(1 + arrayType.sizeOnStack());
+				if ((1 + arrayType.sizeOnStack()) <= g_maxInstructionStackDepth)
+				{
+					m_context << dupInstruction(1 + arrayType.sizeOnStack());
+				}
+				else
+				{
+					m_context << eth::AssemblyItem(u256(1 + arrayType.sizeOnStack())) << dupxInstruction();
+				}
 				ArrayUtils(m_context).retrieveLength(arrayType, 1);
 				// stack: ... <end_of_mem> <value...> <end_of_mem'> <length>
 				storeInMemoryDynamic(IntegerType(256), true);
 				// stack: ... <end_of_mem> <value...> <end_of_mem''>
 				// copy the new memory pointer
-				m_context << swapInstruction(arrayType.sizeOnStack() + 1) << Instruction::POP;
+				if ((1 + arrayType.sizeOnStack()) <= g_maxInstructionStackDepth)
+				{
+					m_context << swapInstruction(arrayType.sizeOnStack() + 1) << Instruction::POP;
+				}
+				else
+				{
+					m_context << eth::AssemblyItem(u256(arrayType.sizeOnStack() + 1)) << swapxInstruction() << Instruction::POP;
+				}
 				// stack: ... <end_of_mem''> <value...>
 				// copy data part
 				ArrayUtils(m_context).copyArrayToMemory(arrayType, _padToWordBoundaries);
@@ -285,7 +308,14 @@ void CompilerUtils::encodeToMemory(
 	}
 
 	// remove unneeded stack elements (and retain memory pointer)
-	m_context << swapInstruction(argSize + dynPointers + 1);
+	if ((argSize + dynPointers + 1) <= g_maxInstructionStackDepth)
+	{
+		m_context << swapInstruction(argSize + dynPointers + 1);
+	}
+	else
+	{
+		m_context << eth::AssemblyItem(u256(argSize + dynPointers + 1)) << swapxInstruction();
+	}
 	popStackSlots(argSize + dynPointers + 1);
 }
 
@@ -756,10 +786,20 @@ void CompilerUtils::convertType(
 				if (sourceSize > 0 || targetSize > 0)
 				{
 					// Move it back into its place.
-					for (unsigned j = 0; j < min(sourceSize, targetSize); ++j)
-						m_context <<
-							swapInstruction(depth + targetSize - sourceSize) <<
-							Instruction::POP;
+					if ((depth + targetSize - sourceSize) <= g_maxInstructionStackDepth)
+					{
+					    for (unsigned j = 0; j < min(sourceSize, targetSize); ++j)
+						    m_context <<
+							    swapInstruction(depth + targetSize - sourceSize) <<
+								Instruction::POP;
+					}
+					else
+					{
+						for (unsigned j = 0; j < min(sourceSize, targetSize); ++j)
+							m_context <<
+								eth::AssemblyItem(u256(depth + targetSize - sourceSize)) << swapxInstruction() <<
+								Instruction::POP;
+					}
 					// Value shrank
 					for (unsigned j = targetSize; j < sourceSize; ++j)
 					{
@@ -877,21 +917,39 @@ void CompilerUtils::moveToStackVariable(VariableDeclaration const& _variable)
 	unsigned const size = _variable.annotation().type->sizeOnStack();
 	solAssert(stackPosition >= size, "Variable size and position mismatch.");
 	// move variable starting from its top end in the stack
-	if (stackPosition - size + 1 > 16)
+	if (stackPosition - size + 1 > g_maxStackDepth)
 		BOOST_THROW_EXCEPTION(
 			CompilerError() <<
 			errinfo_sourceLocation(_variable.location()) <<
 			errinfo_comment("Stack too deep, try removing local variables.")
 		);
-	for (unsigned i = 0; i < size; ++i)
-		m_context << swapInstruction(stackPosition - size + 1) << Instruction::POP;
+	for (unsigned i = 0; i < size; ++i) 
+	{
+		if ((stackPosition - size + 1) <= g_maxInstructionStackDepth)
+		{
+			m_context << swapInstruction(stackPosition - size + 1) << Instruction::POP;
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(stackPosition - size + 1)) << swapxInstruction() << Instruction::POP;
+		}
+	}
 }
 
 void CompilerUtils::copyToStackTop(unsigned _stackDepth, unsigned _itemSize)
 {
-	solAssert(_stackDepth <= 16, "Stack too deep, try removing local variables.");
+	solAssert(_stackDepth <= g_maxStackDepth, "Stack too deep, try removing local variables.");
 	for (unsigned i = 0; i < _itemSize; ++i)
-		m_context << dupInstruction(_stackDepth);
+	{
+		if (_stackDepth <= g_maxInstructionStackDepth)
+		{
+			m_context << dupInstruction(_stackDepth);
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(_stackDepth)) << dupxInstruction();
+		}
+	}
 }
 
 void CompilerUtils::moveToStackTop(unsigned _stackDepth, unsigned _itemSize)
@@ -911,16 +969,34 @@ void CompilerUtils::moveIntoStack(unsigned _stackDepth, unsigned _itemSize)
 
 void CompilerUtils::rotateStackUp(unsigned _items)
 {
-	solAssert(_items - 1 <= 16, "Stack too deep, try removing local variables.");
+	solAssert(_items - 1 <= g_maxStackDepth, "Stack too deep, try removing local variables.");
 	for (unsigned i = 1; i < _items; ++i)
-		m_context << swapInstruction(_items - i);
+	{
+		if (_items - 1 <= g_maxInstructionStackDepth)
+		{
+			m_context << swapInstruction(_items - i);
+		}
+		else
+		{
+			m_context<< eth::AssemblyItem(u256(_items - i)) << swapxInstruction();
+		}
+	}
 }
 
 void CompilerUtils::rotateStackDown(unsigned _items)
 {
-	solAssert(_items - 1 <= 16, "Stack too deep, try removing local variables.");
+	solAssert(_items - 1 <= g_maxStackDepth, "Stack too deep, try removing local variables.");
 	for (unsigned i = 1; i < _items; ++i)
-		m_context << swapInstruction(i);
+	{
+		if (i <= g_maxInstructionStackDepth)
+		{
+			m_context << swapInstruction(i);
+		}
+		else
+		{
+			m_context << eth::AssemblyItem(u256(i)) << swapxInstruction();
+		}
+	}
 }
 
 void CompilerUtils::popStackElement(Type const& _type)

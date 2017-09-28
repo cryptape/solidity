@@ -440,7 +440,44 @@ map<u256, u256> Assembly::optimiseInternal(OptimiserSettings _settings)
 					// reorganise the expression tree, but not all leaves are available.
 				}
 
-				if (shouldReplace)
+ 					//check DUPX/SWAPX valid
+					 int lastPushedValue = -1;
+					 bool isValid = true;
+					 if (shouldReplace)
+					 {
+						 for (AssemblyItem const& item: optimisedChunk)
+						 {
+							 if (SemanticInformation::isDupxInstruction(item) || SemanticInformation::isSwapxInstruction(item))
+							 {
+								 if (lastPushedValue == -1)
+								 {
+									 isValid = false;
+									 break;
+								 }
+							 }
+								 
+							 if (item.type() == Push) {
+								 lastPushedValue = (int)item.data();
+							 } else {
+								 lastPushedValue = -1;
+							 }
+						 }
+ 
+						 if (isValid)
+						 {
+							 auto tmp_iter = orig;
+							 for (;tmp_iter != iter; tmp_iter++)
+							 {
+								 auto item = *tmp_iter;
+								 if (SemanticInformation::isDupxInstruction(item) || SemanticInformation::isSwapxInstruction(item))
+								 {
+									 isValid = false;
+								 }
+							 }
+						 }
+					 }   
+
+				if (isValid && shouldReplace)
 				{
 					count++;
 					optimisedItems += optimisedChunk;
