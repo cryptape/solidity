@@ -404,6 +404,8 @@ assembly::Statement Parser::parseCall(assembly::Statement&& _instruction)
 			fatalParserError("DUPi instructions not allowed for functional notation");
 		if (solidity::Instruction::SWAP1 <= instr && instr <= solidity::Instruction::SWAP16)
 			fatalParserError("SWAPi instructions not allowed for functional notation");
+		if (solidity::Instruction::DUPX == instr || solidity::Instruction::SWAPX == instr)
+			fatalParserError("DUPX/SWAPX instructions not allowed for functional notation");
 		expectToken(Token::LParen);
 		unsigned args = unsigned(instrInfo.args);
 		for (unsigned i = 0; i < args; ++i)

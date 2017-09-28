@@ -308,17 +308,35 @@ void CompilerContext::appendInlineAssembly(
 		int stackDiff = _assembly.stackHeight() - startStackHeight + stackDepth;
 		if (_context == julia::IdentifierContext::LValue)
 			stackDiff -= 1;
-		if (stackDiff < 1 || stackDiff > 16)
+		if (stackDiff < 1 || stackDiff > (int)g_maxStackDepth)
 			BOOST_THROW_EXCEPTION(
 				CompilerError() <<
 				errinfo_sourceLocation(_identifier.location) <<
 				errinfo_comment("Stack too deep (" + to_string(stackDiff) + "), try removing local variables.")
 			);
-		if (_context == julia::IdentifierContext::RValue)
-			_assembly.appendInstruction(dupInstruction(stackDiff));
+		if (_context == julia::IdentifierContext::RValue) 
+		{
+			if (stackDiff <= (int)g_maxInstructionStackDepth)
+			{
+				_assembly.appendInstruction(dupInstruction(stackDiff));
+			}
+			else
+			{
+				_assembly.appendConstant(u256(stackDiff));
+				_assembly.appendInstruction(dupxInstruction());
+			}
+		}
 		else
 		{
-			_assembly.appendInstruction(swapInstruction(stackDiff));
+			if (stackDiff <= (int)g_maxInstructionStackDepth)
+			{
+				_assembly.appendInstruction(swapInstruction(stackDiff));
+			}
+			else
+			{
+				_assembly.appendConstant(u256(stackDiff));
+				_assembly.appendInstruction(swapxInstruction());
+			}
 			_assembly.appendInstruction(Instruction::POP);
 		}
 	};

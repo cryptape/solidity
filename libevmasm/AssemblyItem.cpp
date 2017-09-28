@@ -112,7 +112,8 @@ bool AssemblyItem::canBeFunctional() const
 	switch (m_type)
 	{
 	case Operation:
-		return !SemanticInformation::isDupInstruction(*this) && !SemanticInformation::isSwapInstruction(*this);
+		return !SemanticInformation::isDupInstruction(*this) && !SemanticInformation::isSwapInstruction(*this)
+		       && !SemanticInformation::isDupxInstruction(*this) && !SemanticInformation::isSwapxInstruction(*this);
 	case Push:
 	case PushString:
 	case PushTag:
