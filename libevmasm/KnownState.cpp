@@ -187,6 +187,7 @@ KnownState::StoreOperation KnownState::feedItem(AssemblyItem const& _item, bool 
 		);
 		m_stackHeight += _item.deposit();
 	}
+	_lastPushedValue = _item.type() == Push ? (int)_item.data() : -1;
 	return op;
 }
 

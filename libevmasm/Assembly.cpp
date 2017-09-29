@@ -352,13 +352,14 @@ Assembly& Assembly::optimise(bool _enable, bool _isCreation, size_t _runs)
 {
 	OptimiserSettings settings;
 	settings.isCreation = _isCreation;
+	
+	if (!_enable)
+		return *this; 
+		  
 	settings.runPeephole = true;
-	if (_enable)
-	{
-		settings.runDeduplicate = true;
-		settings.runCSE = true;
-		settings.runConstantOptimiser = true;
-	}
+	settings.runDeduplicate = true;
+	settings.runCSE = true;
+	settings.runConstantOptimiser = true;
 	settings.expectedExecutionsPerDeployment = _runs;
 	optimiseInternal(settings);
 	return *this;
